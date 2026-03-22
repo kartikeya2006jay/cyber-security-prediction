@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+venv/
+
+# Node
+node_modules/
+build/
+dist/
+
+# Env files
+.env
+
+# ML models (VERY IMPORTANT)
+ml/saved_models/
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
