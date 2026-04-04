@@ -3,6 +3,7 @@ from enum import Enum
 from typing import Any
 
 
+# User roles and user document helper.
 class UserRole(str, Enum):
     SUPER_ADMIN = "SUPER_ADMIN"
     SECURITY_ANALYST = "SECURITY_ANALYST"
@@ -12,14 +13,14 @@ class UserRole(str, Enum):
 
 def new_user_document(
     *,
-    name: str,
+    username: str,
     email: str,
     hashed_password: str,
     role: UserRole,
 ) -> dict[str, Any]:
     now = datetime.now(timezone.utc)
     return {
-        "name": name,
+        "username": username,
         "email": email,
         "hashed_password": hashed_password,
         "role": role.value,

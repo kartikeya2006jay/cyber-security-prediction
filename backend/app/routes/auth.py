@@ -4,7 +4,7 @@ from app.core.config import get_settings
 from app.core.rate_limiter import limiter
 from app.dependencies.role_guard import get_current_user, role_required
 from app.models.user_model import UserRole
-from app.schemas.auth_schema import (
+from app.schemas.auth import (
     CreateUserRequest,
     LoginRequest,
     TokenResponse,
@@ -19,6 +19,8 @@ from app.services.auth_service import (
     update_user_role,
 )
 
+
+# Auth routes handle login and user admin.
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 
@@ -63,6 +65,26 @@ async def login(
     status_code=status.HTTP_201_CREATED,
 )
 async def create_user_route(
+    payload: CreateUserRequest,
+    _: dict = Depends(role_required(UserRole.SUPER_ADMIN)),
+) -> UserResponse:
+    try:
+        user = await create_user(payload)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    return UserResponse(**user)
+
+
+@router.post(
+    "/register",
+    response_model=UserResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def register(
     payload: CreateUserRequest,
     _: dict = Depends(role_required(UserRole.SUPER_ADMIN)),
 ) -> UserResponse:

@@ -1,17 +1,21 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
-
+from pydantic import AliasChoices, BaseModel, ConfigDict, EmailStr, Field, field_validator
+3
 from app.models.user_model import UserRole
 
-
+# Auth payload and response models.
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=12, max_length=72)
 
-
 class CreateUserRequest(BaseModel):
-    name: str = Field(min_length=2, max_length=120)
+    username: str = Field(
+        min_length=2,
+        max_length=120,
+        validation_alias=AliasChoices("username", "name"),
+        serialization_alias="username",
+    )
     email: EmailStr
     password: str = Field(min_length=12, max_length=72)
     role: UserRole
@@ -30,10 +34,8 @@ class CreateUserRequest(BaseModel):
             )
         return value
 
-
 class UpdateUserRoleRequest(BaseModel):
     role: UserRole
-
 
 class TokenResponse(BaseModel):
     access_token: str
@@ -41,10 +43,9 @@ class TokenResponse(BaseModel):
     expires_in: int
     role: UserRole
 
-
 class UserResponse(BaseModel):
     id: str
-    name: str
+    username: str = Field(validation_alias=AliasChoices("username", "name"))
     email: EmailStr
     role: UserRole
     created_at: datetime

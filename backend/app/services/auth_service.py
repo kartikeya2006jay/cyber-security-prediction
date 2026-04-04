@@ -6,19 +6,21 @@ from bson import ObjectId
 from pymongo.errors import DuplicateKeyError
 
 from app.core.config import get_settings
-from app.core.database import get_db, get_user_collection_name
+from app.core.database import get_users_collection
 from app.core.security import create_access_token, hash_password, verify_password
 from app.models.user_model import UserRole, new_user_document
-from app.schemas.auth_schema import CreateUserRequest, LoginRequest
+from app.schemas.auth import CreateUserRequest, LoginRequest
 from app.services.security_event_service import emit_auth_event
 
+
+# Auth business logic lives here.
 security_logger = logging.getLogger("security.auth")
 
 
 def _serialize_user(document: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": str(document["_id"]),
-        "name": document["name"],
+        "username": document.get("username") or document.get("name", ""),
         "email": document["email"],
         "role": document["role"],
         "created_at": document["created_at"],
@@ -32,17 +34,36 @@ def _is_gov_email(email: str) -> bool:
 
 
 async def create_user(payload: CreateUserRequest) -> dict[str, Any]:
-    if not _is_gov_email(payload.email):
+    payload_data = payload.model_dump()
+    email = str(payload_data["email"]).strip().lower()
+
+    if not _is_gov_email(email):
         raise ValueError("Only government domain emails are allowed")
 
-    db = get_db()
-    collection = db[get_user_collection_name()]
+    collection = get_users_collection()
+    security_logger.debug("auth.db.selected collection=users")
+
+    role = payload_data["role"]
+    role_value = role.value if isinstance(role, UserRole) else str(role)
+    role_enum = UserRole(role_value)
+
     user_doc = new_user_document(
-        name=payload.name.strip(),
-        email=payload.email.lower(),
-        hashed_password=hash_password(payload.password),
-        role=payload.role,
+        username=str(payload_data["username"]).strip(),
+        email=email,
+        hashed_password=hash_password(str(payload_data["password"])),
+        role=role_enum,
     )
+
+    security_logger.debug(
+        "user.create.attempt email=%s role=%s",
+        email,
+        role_value,
+    )
+
+    # Prevent duplicate registration before insert.
+    existing_user = await collection.find_one({"email": email}, {"_id": 1})
+    if existing_user is not None:
+        raise ValueError("User with this email already exists")
 
     try:
         insert_result = await collection.insert_one(user_doc)
@@ -70,8 +91,8 @@ async def authenticate_user(
     client_ip: str,
     user_agent: str,
 ) -> tuple[dict[str, Any], str, int]:
-    db = get_db()
-    collection = db[get_user_collection_name()]
+    collection = get_users_collection()
+    security_logger.debug("auth.db.selected collection=users")
 
     email = payload.email.lower()
     user_doc = await collection.find_one({"email": email})
@@ -97,7 +118,7 @@ async def authenticate_user(
             "sub": str(user_doc["_id"]),
             "email": user_doc["email"],
             "role": user_doc["role"],
-            "name": user_doc["name"],
+            "username": user_doc.get("username") or user_doc.get("name", ""),
         },
         expires_minutes=token_exp_minutes,
     )
@@ -119,8 +140,7 @@ async def authenticate_user(
 
 
 async def get_user_by_id(user_id: str) -> dict[str, Any] | None:
-    db = get_db()
-    collection = db[get_user_collection_name()]
+    collection = get_users_collection()
 
     if not ObjectId.is_valid(user_id):
         return None
@@ -132,8 +152,7 @@ async def get_user_by_id(user_id: str) -> dict[str, Any] | None:
 
 
 async def list_users() -> list[dict[str, Any]]:
-    db = get_db()
-    collection = db[get_user_collection_name()]
+    collection = get_users_collection()
 
     users: list[dict[str, Any]] = []
     async for doc in collection.find({}, {"hashed_password": 0}).sort("created_at", -1):
@@ -142,8 +161,7 @@ async def list_users() -> list[dict[str, Any]]:
 
 
 async def update_user_role(user_id: str, role: UserRole) -> dict[str, Any]:
-    db = get_db()
-    collection = db[get_user_collection_name()]
+    collection = get_users_collection()
 
     if not ObjectId.is_valid(user_id):
         raise ValueError("Invalid user id")
@@ -187,8 +205,7 @@ async def update_user_role(user_id: str, role: UserRole) -> dict[str, Any]:
 
 
 async def delete_user(user_id: str) -> None:
-    db = get_db()
-    collection = db[get_user_collection_name()]
+    collection = get_users_collection()
 
     if not ObjectId.is_valid(user_id):
         raise ValueError("Invalid user id")
@@ -218,8 +235,7 @@ async def bootstrap_initial_super_admin() -> None:
     if not email or not password:
         return
 
-    db = get_db()
-    collection = db[get_user_collection_name()]
+    collection = get_users_collection()
     existing = await collection.find_one({"email": email})
     if existing:
         if existing.get("role") != UserRole.SUPER_ADMIN.value:
@@ -239,7 +255,7 @@ async def bootstrap_initial_super_admin() -> None:
         return
 
     bootstrap_request = CreateUserRequest(
-        name=settings.initial_super_admin_name,
+        username=settings.initial_super_admin_name,
         email=email,
         password=password,
         role=UserRole.SUPER_ADMIN,

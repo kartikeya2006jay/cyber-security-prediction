@@ -8,6 +8,8 @@ from app.core.security import decode_access_token
 from app.models.user_model import UserRole
 from app.services.auth_service import get_user_by_id
 
+
+# Authentication helpers for protected routes.
 bearer_scheme = HTTPBearer(auto_error=False)
 
 

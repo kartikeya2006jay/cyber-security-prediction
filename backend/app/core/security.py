@@ -7,6 +7,7 @@ from jose import JWTError, jwt
 from app.core.config import get_settings
 
 
+# Password hashing and JWT helpers.
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     try:
         return bcrypt.checkpw(
